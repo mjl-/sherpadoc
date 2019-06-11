@@ -7,11 +7,13 @@ import (
 	"go/parser"
 	"go/token"
 	"log"
-	"os"
+	"path/filepath"
 	"reflect"
 	"sort"
 	"strconv"
 	"strings"
+
+	"golang.org/x/tools/go/packages"
 
 	"github.com/mjl-/sherpadoc"
 )
@@ -513,31 +515,40 @@ func (pp *parsedPackage) ensurePackageParsed(importPath string) *parsedPackage {
 		return r
 	}
 
-	// todo: should also attempt to look at vendor/ directory, and modules
-	localPath := os.Getenv("GOPATH")
-	if localPath == "" {
-		localPath = defaultGOPATH()
+	config := &packages.Config{
+		Mode: packages.NeedName | packages.NeedFiles,
 	}
-	localPath += "/src/" + importPath
+	pkgs, err := packages.Load(config, importPath)
+	check(err, "loading package")
+	if len(pkgs) != 1 {
+		log.Fatalf("loading package %q: got %d packages, expected 1", importPath, len(pkgs))
+	}
+	pkg := pkgs[0]
+	if len(pkg.GoFiles) == 0 {
+		log.Fatalf("loading package %q: no go files found", importPath)
+	}
 
 	fset := token.NewFileSet()
-	pkgs, firstErr := parser.ParseDir(fset, localPath, nil, parser.ParseComments)
-	check(firstErr, "parsing code")
-	if len(pkgs) != 1 {
-		log.Fatalf("need exactly one package parsed for import path %q, but saw %d\n", importPath, len(pkgs))
+	localPath := filepath.Dir(pkg.GoFiles[0])
+	astPkgs, err := parser.ParseDir(fset, localPath, nil, parser.ParseComments)
+	check(err, "parsing go files from directory")
+	if len(astPkgs) != 1 {
+		log.Fatalf("loading package %q: got %d ast packages, expected 1", importPath, len(pkgs))
 	}
-	for _, pkg := range pkgs {
-		docpkg := doc.New(pkg, "", doc.AllDecls)
-		npp := &parsedPackage{
-			Path:    localPath,
-			Pkg:     pkg,
-			Docpkg:  docpkg,
-			Imports: make(map[string]*parsedPackage),
-		}
-		pp.Imports[importPath] = npp
-		return npp
+	var astPkg *ast.Package
+	for _, v := range astPkgs {
+		astPkg = v
 	}
-	return nil
+	docpkg := doc.New(astPkg, "", doc.AllDecls)
+
+	npp := &parsedPackage{
+		Path:    pkg.ID,
+		Pkg:     astPkg,
+		Docpkg:  docpkg,
+		Imports: make(map[string]*parsedPackage),
+	}
+	pp.Imports[importPath] = npp
+	return npp
 }
 
 // LookupPackageImportPath returns the import/package path for pkgName as used as a selector in this section.
