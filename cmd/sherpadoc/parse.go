@@ -532,12 +532,9 @@ func (pp *parsedPackage) ensurePackageParsed(importPath string) *parsedPackage {
 	localPath := filepath.Dir(pkg.GoFiles[0])
 	astPkgs, err := parser.ParseDir(fset, localPath, nil, parser.ParseComments)
 	check(err, "parsing go files from directory")
-	if len(astPkgs) != 1 {
-		log.Fatalf("loading package %q: got %d ast packages, expected 1", importPath, len(pkgs))
-	}
-	var astPkg *ast.Package
-	for _, v := range astPkgs {
-		astPkg = v
+	astPkg, ok := astPkgs[pkg.Name]
+	if !ok {
+		log.Fatalf("loading package %q: could not find astPkg for %q", importPath, pkg.Name)
 	}
 	docpkg := doc.New(astPkg, "", doc.AllDecls)
 
