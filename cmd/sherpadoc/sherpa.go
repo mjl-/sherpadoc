@@ -37,14 +37,14 @@ func sherpaSection(sec *section) *sherpadoc.Section {
 		case typeInts:
 			e := sherpadoc.Ints{
 				Name:   t.Name,
-				Docs:   t.Text,
+				Docs:   strings.TrimSpace(t.Text),
 				Values: t.IntValues,
 			}
 			doc.Ints = append(doc.Ints, e)
 		case typeStrings:
 			e := sherpadoc.Strings{
 				Name:   t.Name,
-				Docs:   t.Text,
+				Docs:   strings.TrimSpace(t.Text),
 				Values: t.StringValues,
 			}
 			doc.Strings = append(doc.Strings, e)

@@ -244,7 +244,7 @@ func ensureNamedType(t *doc.Type, sec *section, pp *parsedPackage) {
 						Name  string
 						Value int
 						Docs  string
-					}{name, int(v), comment}
+					}{name, int(v), strings.TrimSpace(comment)}
 					tt.IntValues = append(tt.IntValues, iv)
 				case token.STRING:
 					if tt.Kind != typeStrings {
@@ -256,7 +256,7 @@ func ensureNamedType(t *doc.Type, sec *section, pp *parsedPackage) {
 						Name  string
 						Value string
 						Docs  string
-					}{name, v, comment}
+					}{name, v, strings.TrimSpace(comment)}
 					tt.StringValues = append(tt.StringValues, sv)
 				default:
 					log.Fatalf("unexpected literal kind %#v", lit.Kind)
