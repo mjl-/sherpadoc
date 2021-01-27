@@ -25,7 +25,7 @@ type checker struct {
 
 func (c checker) markIdent(path, ident string) {
 	if _, ok := c.types[ident]; ok {
-		parseError("duplicate type %q", ident)
+		parseError(path, "duplicate type %q", ident)
 	}
 	c.types[ident] = struct{}{}
 }
@@ -36,6 +36,9 @@ func (c checker) walkTypeNames(path string, sec *Section) {
 	}
 	for i, t := range sec.Ints {
 		npath := makePath(path, "Ints", i, t.Name)
+		if len(t.Values) == 0 {
+			parseError(npath, "enum without values")
+		}
 		c.markIdent(npath, t.Name)
 		for j, v := range t.Values {
 			c.markIdent(makePath(npath, "Values", j, v.Name), v.Name)
@@ -43,6 +46,9 @@ func (c checker) walkTypeNames(path string, sec *Section) {
 	}
 	for i, t := range sec.Strings {
 		npath := makePath(path, "Strings", i, t.Name)
+		if len(t.Values) == 0 {
+			parseError(npath, "enum without value")
+		}
 		c.markIdent(npath, t.Name)
 		for j, v := range t.Values {
 			c.markIdent(makePath(npath, "Values", j, v.Name), v.Name)

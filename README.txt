@@ -14,7 +14,6 @@ MIT-licensed, see LICENSE.
 
 # todo
 
-- raise error for ints & strings without constants defined.
 - better error messages and error handling, stricter parsing
 - support plain iota enums? currently only simple literals are supported for enums.
 - support complete expressions for enum consts?
