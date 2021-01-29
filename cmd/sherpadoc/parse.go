@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"golang.org/x/tools/go/packages"
 
@@ -613,14 +614,32 @@ func parseArgs(params *[]sherpadoc.Arg, fields *ast.FieldList, sec *section, pp 
 	}
 }
 
-func lowerFirst(s string) string {
-	return strings.ToLower(s[:1]) + s[1:]
+func adjustFunctionName(s string) string {
+	switch *adjustFunctionNames {
+	case "":
+		return strings.ToLower(s[:1]) + s[1:]
+	case "none":
+		return s
+	case "lowerWord":
+		r := ""
+		for i, c := range s {
+			lc := unicode.ToLower(c)
+			if lc == c {
+				r += s[i:]
+				break
+			}
+			r += string(lc)
+		}
+		return r
+	default:
+		panic(fmt.Sprintf("bad value for flag adjust-function-names: %q", *adjustFunctionNames))
+	}
 }
 
 // ParseMethod ensures the function fn from package pp ends up in section sec, with parameters/return named types filled in.
 func parseMethod(sec *section, fn *doc.Func, pp *parsedPackage) {
 	f := &function{
-		Name:    lowerFirst(fn.Name),
+		Name:    adjustFunctionName(fn.Name),
 		Text:    fn.Doc,
 		Params:  []sherpadoc.Arg{},
 		Returns: []sherpadoc.Arg{},

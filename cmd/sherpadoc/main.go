@@ -51,9 +51,10 @@ import (
 )
 
 var (
-	packagePath = flag.String("package-path", ".", "of source code to parse")
-	replace     = flag.String("replace", "", "comma-separated list of type replacements, e.g. \"somepkg.SomeType string\"")
-	title       = flag.String("title", "", "title of the API, default is the name of the type of the main API")
+	packagePath         = flag.String("package-path", ".", "of source code to parse")
+	replace             = flag.String("replace", "", "comma-separated list of type replacements, e.g. \"somepkg.SomeType string\"")
+	title               = flag.String("title", "", "title of the API, default is the name of the type of the main API")
+	adjustFunctionNames = flag.String("adjust-function-names", "", `by default, the first character of function names is turned into lower case; with "lowerWord" the first string of upper case characters is lower cased, with "none" the name is left as is`)
 )
 
 type field struct {
