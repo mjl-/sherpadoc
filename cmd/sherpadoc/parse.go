@@ -21,8 +21,9 @@ import (
 
 // ParsedPackage possibly includes some of its imports because the package that contains the section references it.
 type parsedPackage struct {
-	Path    string       // Of import, used for keeping duplicate type names from different packages unique.
-	Pkg     *ast.Package // Needed for its files: we need a file to find the package path and identifier used to reference other types.
+	Fset    *token.FileSet // Used with a token.Pos to get offending locations.
+	Path    string         // Of import, used for keeping duplicate type names from different packages unique.
+	Pkg     *ast.Package   // Needed for its files: we need a file to find the package path and identifier used to reference other types.
 	Docpkg  *doc.Package
 	Imports map[string]*parsedPackage // Package/import path to parsed packages.
 }
@@ -36,6 +37,16 @@ func (pp *parsedPackage) lookupType(name string) *doc.Type {
 		}
 	}
 	return nil
+}
+
+// Like log.Fatalf, but prefixes error message with offending file position (if known).
+// pp is the package where the position tok belongs to.
+func logFatalLinef(pp *parsedPackage, tok token.Pos, format string, args ...interface{}) {
+	if !tok.IsValid() {
+		log.Fatalf(format, args...)
+	}
+	msg := fmt.Sprintf(format, args...)
+	log.Fatalf("%s: %s", pp.Fset.Position(tok).String(), msg)
 }
 
 // Documentation for a single field, with text above the field, and
@@ -105,6 +116,7 @@ func parseDoc(apiName, packagePath string) *section {
 		for _, t := range docpkg.Types {
 			if t.Name == apiName {
 				par := &parsedPackage{
+					Fset:    fset,
 					Path:    packagePath,
 					Pkg:     pkg,
 					Docpkg:  docpkg,
@@ -157,7 +169,7 @@ func parseSection(t *doc.Type, pp *parsedPackage) *section {
 		}
 		subt := pp.lookupType(ident.Name)
 		if subt == nil {
-			log.Fatalf("subsection %q not found", ident.Name)
+			logFatalLinef(pp, ident.Pos(), "subsection %q not found", ident.Name)
 		}
 		subsec := parseSection(subt, pp)
 		subsec.Name = name
@@ -166,7 +178,7 @@ func parseSection(t *doc.Type, pp *parsedPackage) *section {
 	return sec
 }
 
-// Ensure type "t" - used in a field or argument - in package pp is parsed and added to the section.
+// Ensure type "t" - used in a field or argument - and defined in package pp is parsed and added to the section.
 func ensureNamedType(t *doc.Type, sec *section, pp *parsedPackage) {
 	typePath := pp.Path + "." + t.Name
 	if _, have := sec.Typeset[typePath]; have {
@@ -182,6 +194,10 @@ func ensureNamedType(t *doc.Type, sec *section, pp *parsedPackage) {
 	sec.Typeset[typePath] = struct{}{}
 
 	ts := t.Decl.Specs[0].(*ast.TypeSpec)
+	if ts.Assign.IsValid() {
+		logFatalLinef(pp, t.Decl.TokPos, "type aliases not yet supported")
+	}
+
 	switch nt := ts.Type.(type) {
 	case *ast.StructType:
 		tt.Kind = typeStruct
@@ -205,10 +221,6 @@ func ensureNamedType(t *doc.Type, sec *section, pp *parsedPackage) {
 			return
 		}
 
-		if ts.Assign != token.NoPos {
-			log.Fatalf("type aliases not yet supported: type %s = %s", t.Name, nt.Name)
-		}
-
 		tt.Text = t.Doc + ts.Comment.Text()
 		switch nt.Name {
 		case "byte", "int16", "uint16", "int32", "uint32", "int", "uint":
@@ -216,32 +228,32 @@ func ensureNamedType(t *doc.Type, sec *section, pp *parsedPackage) {
 		case "string":
 			tt.Kind = typeStrings
 		default:
-			log.Fatalf("unrecognized type identifier %#v", nt.Name)
+			logFatalLinef(pp, t.Decl.TokPos, "unrecognized type identifier %#v", nt.Name)
 		}
 
 		for _, c := range t.Consts {
 			for _, spec := range c.Decl.Specs {
 				vs, ok := spec.(*ast.ValueSpec)
 				if !ok {
-					log.Fatalf("unsupported non-ast.ValueSpec constant %#v", spec)
+					logFatalLinef(pp, spec.Pos(), "unsupported non-ast.ValueSpec constant %#v", spec)
 				}
 				if len(vs.Names) != 1 {
-					log.Fatalf("unsupported multiple .Names in %#v", vs)
+					logFatalLinef(pp, vs.Pos(), "unsupported multiple .Names in %#v", vs)
 				}
 				name := vs.Names[0].Name
 				if len(vs.Values) != 1 {
-					log.Fatalf("unsupported multiple .Values in %#v", vs)
+					logFatalLinef(pp, vs.Pos(), "unsupported multiple .Values in %#v", vs)
 				}
 				lit, ok := vs.Values[0].(*ast.BasicLit)
 				if !ok {
-					log.Fatalf("unsupported non-ast.BasicLit first .Values %#v", vs)
+					logFatalLinef(pp, vs.Pos(), "unsupported non-ast.BasicLit first .Values %#v", vs)
 				}
 
 				comment := vs.Doc.Text() + vs.Comment.Text()
 				switch lit.Kind {
 				case token.INT:
 					if tt.Kind != typeInts {
-						log.Fatalf("int value for for non-int-enum %s", t.Name)
+						logFatalLinef(pp, lit.Pos(), "int value for for non-int-enum %q", t.Name)
 					}
 					v, err := strconv.ParseInt(lit.Value, 10, 64)
 					check(err, "parse int literal")
@@ -253,7 +265,7 @@ func ensureNamedType(t *doc.Type, sec *section, pp *parsedPackage) {
 					tt.IntValues = append(tt.IntValues, iv)
 				case token.STRING:
 					if tt.Kind != typeStrings {
-						log.Fatalf("string for non-string-enum %s", t.Name)
+						logFatalLinef(pp, lit.Pos(), "string for non-string-enum %q", t.Name)
 					}
 					v, err := strconv.Unquote(lit.Value)
 					check(err, "unquote literal")
@@ -264,12 +276,12 @@ func ensureNamedType(t *doc.Type, sec *section, pp *parsedPackage) {
 					}{name, v, strings.TrimSpace(comment)}
 					tt.StringValues = append(tt.StringValues, sv)
 				default:
-					log.Fatalf("unexpected literal kind %#v", lit.Kind)
+					logFatalLinef(pp, lit.Pos(), "unexpected literal kind %#v", lit.Kind)
 				}
 			}
 		}
 	default:
-		log.Fatalf("unsupported field/param/return type %T", ts.Type)
+		logFatalLinef(pp, t.Decl.TokPos, "unsupported field/param/return type %T", ts.Type)
 	}
 }
 
@@ -318,10 +330,10 @@ func gatherFieldType(typeName string, f *field, e ast.Expr, fieldTag *ast.BasicL
 		case "int", "uint":
 			name += "32"
 		default:
-			log.Fatalf("unsupported type %q", name)
+			logFatalLinef(pp, t.Pos(), "unsupported type %q", name)
 		}
 		if commaString && name != "int64s" && name != "uint64s" {
-			log.Fatalf("unsupported tag `json:,\"string\"` for non-64bit int in %s.%s", typeName, f.Name)
+			logFatalLinef(pp, t.Pos(), "unsupported tag `json:,\"string\"` for non-64bit int in %s.%s", typeName, f.Name)
 		}
 		return []string{name}
 	case *ast.ArrayType:
@@ -334,7 +346,7 @@ func gatherFieldType(typeName string, f *field, e ast.Expr, fieldTag *ast.BasicL
 		// If we export an interface as an "any" type, we want to make sure it's intended.
 		// Require the user to be explicit with an empty interface.
 		if t.Methods != nil && len(t.Methods.List) > 0 {
-			log.Fatalf("unsupported non-empty interface param/return type %T", t)
+			logFatalLinef(pp, t.Pos(), "unsupported non-empty interface param/return type %T", t)
 		}
 		return []string{"any"}
 	case *ast.StarExpr:
@@ -342,7 +354,7 @@ func gatherFieldType(typeName string, f *field, e ast.Expr, fieldTag *ast.BasicL
 	case *ast.SelectorExpr:
 		return []string{parseSelector(t, typeName, sec, pp)}
 	}
-	log.Fatalf("unimplemented ast.Expr %#v for struct %q field %q in gatherFieldType", e, typeName, f.Name)
+	logFatalLinef(pp, e.Pos(), "unimplemented ast.Expr %#v for struct %q field %q in gatherFieldType", e, typeName, f.Name)
 	return nil
 }
 
@@ -369,7 +381,7 @@ func parseArgType(e ast.Expr, sec *section, pp *parsedPackage) typewords {
 		case "error":
 			// allowed here, checked if in right location by caller
 		default:
-			log.Fatalf("unsupported type %q", name)
+			logFatalLinef(pp, t.Pos(), "unsupported type %q", name)
 		}
 		return []string{name}
 	case *ast.ArrayType:
@@ -385,7 +397,7 @@ func parseArgType(e ast.Expr, sec *section, pp *parsedPackage) typewords {
 		// If we export an interface as an "any" type, we want to make sure it's intended.
 		// Require the user to be explicit with an empty interface.
 		if t.Methods != nil && len(t.Methods.List) > 0 {
-			log.Fatalf("unsupported non-empty interface param/return type %T", t)
+			logFatalLinef(pp, t.Pos(), "unsupported non-empty interface param/return type %T", t)
 		}
 		return []string{"any"}
 	case *ast.StarExpr:
@@ -393,14 +405,14 @@ func parseArgType(e ast.Expr, sec *section, pp *parsedPackage) typewords {
 	case *ast.SelectorExpr:
 		return []string{parseSelector(t, sec.TypeName, sec, pp)}
 	}
-	log.Fatalf("unimplemented ast.Expr %#v in parseArgType", e)
+	logFatalLinef(pp, e.Pos(), "unimplemented ast.Expr %#v in parseArgType", e)
 	return nil
 }
 
 func parseSelector(t *ast.SelectorExpr, sourceTypeName string, sec *section, pp *parsedPackage) string {
 	packageIdent, ok := t.X.(*ast.Ident)
 	if !ok {
-		log.Fatalf("unexpected non-ident for SelectorExpr.X")
+		logFatalLinef(pp, t.Pos(), "unexpected non-ident for SelectorExpr.X")
 	}
 	pkgName := packageIdent.Name
 	typeName := t.Sel.Name
@@ -419,13 +431,13 @@ func parseSelector(t *ast.SelectorExpr, sourceTypeName string, sec *section, pp 
 
 	importPath := pp.lookupPackageImportPath(sourceTypeName, pkgName)
 	if importPath == "" {
-		log.Fatalf("cannot find source for %q (perhaps try -replace)", fmt.Sprintf("%s.%s", pkgName, typeName))
+		logFatalLinef(pp, t.Pos(), "cannot find source for %q (perhaps try -replace)", fmt.Sprintf("%s.%s", pkgName, typeName))
 	}
 
 	opp := pp.ensurePackageParsed(importPath)
 	tt := opp.lookupType(typeName)
 	if tt == nil {
-		log.Fatalf("could not find type %q in package %q", typeName, importPath)
+		logFatalLinef(pp, t.Pos(), "could not find type %q in package %q", typeName, importPath)
 	}
 	ensureNamedType(tt, sec, opp)
 	return typeName
@@ -478,7 +490,7 @@ func goTypeName(e ast.Expr, sec *section, pp *parsedPackage) string {
 	case *ast.SelectorExpr:
 		packageIdent, ok := t.X.(*ast.Ident)
 		if !ok {
-			log.Fatalf("unexpected non-ident for SelectorExpr.X")
+			logFatalLinef(pp, t.Pos(), "unexpected non-ident for SelectorExpr.X")
 		}
 		pkgName := packageIdent.Name
 		typeName := t.Sel.Name
@@ -490,7 +502,7 @@ func goTypeName(e ast.Expr, sec *section, pp *parsedPackage) string {
 		return fmt.Sprintf("%s.%s", pkgName, typeName)
 		// todo: give proper error message for *ast.StructType
 	}
-	log.Fatalf("unimplemented ast.Expr %#v in goTypeName", e)
+	logFatalLinef(pp, e.Pos(), "unimplemented ast.Expr %#v in goTypeName", e)
 	return ""
 }
 
@@ -544,6 +556,7 @@ func (pp *parsedPackage) ensurePackageParsed(importPath string) *parsedPackage {
 	docpkg := doc.New(astPkg, "", doc.AllDecls)
 
 	npp := &parsedPackage{
+		Fset:    fset,
 		Path:    pkg.ID,
 		Pkg:     astPkg,
 		Docpkg:  docpkg,
@@ -611,7 +624,7 @@ func parseArgs(params *[]sherpadoc.Arg, fields *ast.FieldList, sec *section, pp 
 			continue
 		}
 		if isParams || i != len(*params)-1 {
-			log.Fatalf("can only have error type as last return value")
+			logFatalLinef(pp, fields.Pos(), "can only have error type as last return value")
 		}
 		pp := *params
 		*params = pp[:len(pp)-1]
