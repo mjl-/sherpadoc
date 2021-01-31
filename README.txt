@@ -16,6 +16,7 @@ MIT-licensed, see LICENSE.
 
 - see if order of items in output depends on a map somewhere, i've seen diffs for generated jsons where a type was only moved, not modified.
 - better error messages and error handling, stricter parsing
+- support type aliases
 - support plain iota enums? currently only simple literals are supported for enums.
 - support complete expressions for enum consts?
 - find out which go constructs people want to use that aren't yet implemented by sherpadoc

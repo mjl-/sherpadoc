@@ -205,6 +205,10 @@ func ensureNamedType(t *doc.Type, sec *section, pp *parsedPackage) {
 			return
 		}
 
+		if ts.Assign != token.NoPos {
+			log.Fatalf("type aliases not yet supported: type %s = %s", t.Name, nt.Name)
+		}
+
 		tt.Text = t.Doc + ts.Comment.Text()
 		switch nt.Name {
 		case "byte", "int16", "uint16", "int32", "uint32", "int", "uint":
