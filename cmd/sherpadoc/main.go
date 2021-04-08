@@ -128,17 +128,19 @@ func check(err error, action string) {
 	}
 }
 
+func usage() {
+	log.Println("usage: sherpadoc [flags] section")
+	flag.PrintDefaults()
+	os.Exit(2)
+}
+
 func main() {
 	log.SetFlags(0)
-	flag.Usage = func() {
-		fmt.Fprintf(os.Stderr, "usage: %s [flags] section\n", os.Args[0])
-		flag.PrintDefaults()
-	}
+	flag.Usage = usage
 	flag.Parse()
 	args := flag.Args()
 	if len(args) != 1 {
-		flag.Usage()
-		os.Exit(2)
+		usage()
 	}
 
 	section := parseDoc(args[0], *packagePath)
