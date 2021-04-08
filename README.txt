@@ -14,6 +14,10 @@ MIT-licensed, see LICENSE.
 
 # todo
 
+- major cleanup required. too much parsing is done that can probably be handled by the go/* packages.
+- check that all cases of embedding work
+- check that all cross-package referencing (ast.SelectorExpr) works
+- better cli syntax for replacements, and always replace based on fully qualified names. currently you need to specify both the fully qualified and unqualified type paths.
 - see if order of items in output depends on a map somewhere, i've seen diffs for generated jsons where a type was only moved, not modified.
 - better error messages and error handling, stricter parsing
 - support type aliases
