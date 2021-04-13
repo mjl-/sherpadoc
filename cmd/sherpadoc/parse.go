@@ -178,7 +178,8 @@ func parseSection(t *doc.Type, pp *parsedPackage) *section {
 	return sec
 }
 
-// Ensure type "t" - used in a field or argument - and defined in package pp is parsed and added to the section.
+// Ensure type "t" (used in a field or argument) defined in package pp is parsed
+// and added to the section.
 func ensureNamedType(t *doc.Type, sec *section, pp *parsedPackage) {
 	typePath := pp.Path + "." + t.Name
 	if _, have := sec.Typeset[typePath]; have {
@@ -223,7 +224,7 @@ func ensureNamedType(t *doc.Type, sec *section, pp *parsedPackage) {
 			gatherFields(xt.X, typeName, xpp)
 		case *ast.SelectorExpr:
 			// With package prefix, lookup the type in the package and gather its fields.
-			dt, nxpp := parseFieldSelector(xt, typeName, sec, xpp)
+			dt, nxpp := parseFieldSelector(useSrc{xpp, typeName}, xt)
 			tts := dt.Decl.Specs[0].(*ast.TypeSpec)
 			if ts.Assign.IsValid() {
 				logFatalLinef(nxpp, dt.Decl.TokPos, "type aliases not yet supported")
@@ -355,7 +356,7 @@ func isCommaString(tag *ast.BasicLit) bool {
 }
 
 func gatherFieldType(typeName string, f *field, e ast.Expr, fieldTag *ast.BasicLit, sec *section, pp *parsedPackage) typewords {
-	name := checkReplacedType(e, sec, pp)
+	name := checkReplacedType(useSrc{pp, typeName}, e)
 	if name != nil {
 		return name
 	}
@@ -409,7 +410,7 @@ func gatherFieldType(typeName string, f *field, e ast.Expr, fieldTag *ast.BasicL
 }
 
 func parseArgType(e ast.Expr, sec *section, pp *parsedPackage) typewords {
-	name := checkReplacedType(e, sec, pp)
+	name := checkReplacedType(useSrc{pp, sec.Name}, e)
 	if name != nil {
 		return name
 	}
@@ -460,23 +461,23 @@ func parseArgType(e ast.Expr, sec *section, pp *parsedPackage) typewords {
 }
 
 // Parse the selector of a field, returning the type and the parsed package it exists in. This cannot be a builtin type.
-func parseFieldSelector(t *ast.SelectorExpr, srcTypeName string, sec *section, pp *parsedPackage) (*doc.Type, *parsedPackage) {
+func parseFieldSelector(u useSrc, t *ast.SelectorExpr) (*doc.Type, *parsedPackage) {
 	packageIdent, ok := t.X.(*ast.Ident)
 	if !ok {
-		logFatalLinef(pp, t.Pos(), "unexpected non-ident for SelectorExpr.X")
+		u.Fatalf(t.Pos(), "unexpected non-ident for SelectorExpr.X")
 	}
 	pkgName := packageIdent.Name
 	typeName := t.Sel.Name
 
-	importPath := pp.lookupPackageImportPath(srcTypeName, pkgName)
+	importPath := u.lookupPackageImportPath(pkgName)
 	if importPath == "" {
-		logFatalLinef(pp, t.Pos(), "cannot find source for type %q that references package %q (perhaps try -replace)", srcTypeName, pkgName)
+		u.Fatalf(t.Pos(), "cannot find source for type %q that references package %q (perhaps try -replace)", u, pkgName)
 	}
 
-	opp := pp.ensurePackageParsed(importPath)
+	opp := u.Ppkg.ensurePackageParsed(importPath)
 	tt := opp.lookupType(typeName)
 	if tt == nil {
-		logFatalLinef(pp, t.Pos(), "could not find type %q in package %q", typeName, importPath)
+		u.Fatalf(t.Pos(), "could not find type %q in package %q", typeName, importPath)
 	}
 	return tt, opp
 }
@@ -542,49 +543,71 @@ func typeReplacements() []replacement {
 	return _replacements
 }
 
+// Use of a type Name from package Ppkg. Used to look up references from that
+// location (the file where the type is defined, with its imports) for a given Go
+// ast.
+type useSrc struct {
+	Ppkg *parsedPackage
+	Name string
+}
+
+func (u useSrc) lookupPackageImportPath(pkgName string) string {
+	return u.Ppkg.lookupPackageImportPath(u.Name, pkgName)
+}
+
+func (u useSrc) String() string {
+	return fmt.Sprintf("%s.%s", u.Ppkg.Path, u.Name)
+}
+
+func (u useSrc) Fatalf(tok token.Pos, format string, args ...interface{}) {
+	logFatalLinef(u.Ppkg, tok, format, args...)
+}
+
 // Return a go type name, eg "*time.Time".
-// This function does not parse the types itself, because it would mean they could be added to the sherpadoc output even if they aren't otherwise used (due to replacement).
-func goTypeName(e ast.Expr, sec *section, pp *parsedPackage) string {
+// This function does not parse the types itself, because it would mean they could
+// be added to the sherpadoc output even if they aren't otherwise used (due to
+// replacement).
+func goTypeName(u useSrc, e ast.Expr) string {
 	switch t := e.(type) {
 	case *ast.Ident:
 		return t.Name
 	case *ast.ArrayType:
-		return "[]" + goTypeName(t.Elt, sec, pp)
+		return "[]" + goTypeName(u, t.Elt)
 	case *ast.Ellipsis:
 		// Ellipsis parameters to a function must be passed as an array, so document it that way.
-		return "[]" + goTypeName(t.Elt, sec, pp)
+		return "[]" + goTypeName(u, t.Elt)
 	case *ast.MapType:
-		return fmt.Sprintf("map[%s]%s", goTypeName(t.Key, sec, pp), goTypeName(t.Value, sec, pp))
+		return fmt.Sprintf("map[%s]%s", goTypeName(u, t.Key), goTypeName(u, t.Value))
 	case *ast.InterfaceType:
 		return "interface{}"
 	case *ast.StarExpr:
-		return "*" + goTypeName(t.X, sec, pp)
+		return "*" + goTypeName(u, t.X)
 	case *ast.SelectorExpr:
 		packageIdent, ok := t.X.(*ast.Ident)
 		if !ok {
-			logFatalLinef(pp, t.Pos(), "unexpected non-ident for SelectorExpr.X")
+			u.Fatalf(t.Pos(), "unexpected non-ident for SelectorExpr.X")
 		}
 		pkgName := packageIdent.Name
 		typeName := t.Sel.Name
 
-		importPath := pp.lookupPackageImportPath(sec.Name, pkgName)
+		importPath := u.lookupPackageImportPath(pkgName)
 		if importPath != "" {
 			return fmt.Sprintf("%s.%s", importPath, typeName)
 		}
 		return fmt.Sprintf("%s.%s", pkgName, typeName)
 		// todo: give proper error message for *ast.StructType
 	}
-	logFatalLinef(pp, e.Pos(), "unimplemented ast.Expr %#v in goTypeName", e)
+	u.Fatalf(e.Pos(), "unimplemented ast.Expr %#v in goTypeName", e)
 	return ""
 }
 
-func checkReplacedType(e ast.Expr, sec *section, pp *parsedPackage) typewords {
+func checkReplacedType(u useSrc, e ast.Expr) typewords {
 	repls := typeReplacements()
 	if len(repls) == 0 {
 		return nil
 	}
 
-	name := goTypeName(e, sec, pp)
+	name := goTypeName(u, e)
 	return replacementType(repls, name)
 }
 
@@ -638,7 +661,8 @@ func (pp *parsedPackage) ensurePackageParsed(importPath string) *parsedPackage {
 	return npp
 }
 
-// LookupPackageImportPath returns the import/package path for pkgName as used as used in the type named typeName.
+// LookupPackageImportPath returns the import/package path for pkgName as used as
+// used in the type named typeName.
 func (pp *parsedPackage) lookupPackageImportPath(typeName, pkgName string) string {
 	file := pp.lookupTypeFile(typeName)
 	for _, imp := range file.Imports {
@@ -666,7 +690,7 @@ func (pp *parsedPackage) lookupTypeFile(typeName string) *ast.File {
 			}
 		}
 	}
-	log.Fatalf("could not find type named %q in package %q", typeName, pp.Path)
+	log.Fatalf("could not find type %q", fmt.Sprintf("%s.%s", pp.Path, typeName))
 	return nil
 }
 
@@ -737,7 +761,7 @@ func parseMethod(sec *section, fn *doc.Func, pp *parsedPackage) {
 	// If first function parameter is context.Context, we skip it in the documentation.
 	// The sherpa handler automatically fills it with the http request context when called.
 	params := fn.Decl.Type.Params
-	if params != nil && len(params.List) > 0 && len(params.List[0].Names) == 1 && goTypeName(params.List[0].Type, sec, pp) == "context.Context" {
+	if params != nil && len(params.List) > 0 && len(params.List[0].Names) == 1 && goTypeName(useSrc{pp, sec.Name}, params.List[0].Type) == "context.Context" {
 		params.List = params.List[1:]
 	}
 	isParams := true
