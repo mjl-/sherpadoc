@@ -24,5 +24,5 @@ MIT-licensed, see LICENSE.
 - support plain iota enums? currently only simple literals are supported for enums.
 - support complete expressions for enum consts?
 - find out which go constructs people want to use that aren't yet implemented by sherpadoc
-- error or warn when omitempty is set for non-pointer?
+- when to make a field nullable. when omitempty is set? (currently yes), when field is a pointer type (currently yes). should we have a way to prevent nullable without omitempty set, or make field a pointer without it being nullable?
 - write tests

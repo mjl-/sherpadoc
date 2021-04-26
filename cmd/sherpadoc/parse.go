@@ -336,8 +336,16 @@ func ensureNamedType(t *doc.Type, sec *section, pp *parsedPackage) {
 	}
 }
 
+func hasOmitEmpty(tag *ast.BasicLit) bool {
+	return hasJSONTagValue(tag, "omitempty")
+}
+
 // isCommaString returns whether the tag (may be nil) contains a "json:,string" directive.
 func isCommaString(tag *ast.BasicLit) bool {
+	return hasJSONTagValue(tag, "string")
+}
+
+func hasJSONTagValue(tag *ast.BasicLit, v string) bool {
 	if tag == nil {
 		return false
 	}
@@ -348,7 +356,7 @@ func isCommaString(tag *ast.BasicLit) bool {
 	}
 	t := strings.Split(s, ",")
 	for _, e := range t[1:] {
-		if e == "string" {
+		if e == v {
 			return true
 		}
 	}
@@ -356,8 +364,16 @@ func isCommaString(tag *ast.BasicLit) bool {
 }
 
 func gatherFieldType(typeName string, f *field, e ast.Expr, fieldTag *ast.BasicLit, sec *section, pp *parsedPackage) typewords {
+	nullablePrefix := typewords{}
+	if hasOmitEmpty(fieldTag) {
+		nullablePrefix = typewords{"nullable"}
+	}
+
 	name := checkReplacedType(useSrc{pp, typeName}, e)
 	if name != nil {
+		if name[0] != "nullable" {
+			return append(nullablePrefix, name...)
+		}
 		return name
 	}
 
@@ -386,24 +402,28 @@ func gatherFieldType(typeName string, f *field, e ast.Expr, fieldTag *ast.BasicL
 		if commaString && name != "int64s" && name != "uint64s" {
 			logFatalLinef(pp, t.Pos(), "unsupported tag `json:,\"string\"` for non-64bit int in %s.%s", typeName, f.Name)
 		}
-		return []string{name}
+		return append(nullablePrefix, name)
 	case *ast.ArrayType:
-		return append([]string{"[]"}, gatherFieldType(typeName, f, t.Elt, nil, sec, pp)...)
+		return append(nullablePrefix, append([]string{"[]"}, gatherFieldType(typeName, f, t.Elt, nil, sec, pp)...)...)
 	case *ast.MapType:
 		_ = gatherFieldType(typeName, f, t.Key, nil, sec, pp)
 		vt := gatherFieldType(typeName, f, t.Value, nil, sec, pp)
-		return append([]string{"{}"}, vt...)
+		return append(nullablePrefix, append([]string{"{}"}, vt...)...)
 	case *ast.InterfaceType:
 		// If we export an interface as an "any" type, we want to make sure it's intended.
 		// Require the user to be explicit with an empty interface.
 		if t.Methods != nil && len(t.Methods.List) > 0 {
 			logFatalLinef(pp, t.Pos(), "unsupported non-empty interface param/return type %T", t)
 		}
-		return []string{"any"}
+		return append(nullablePrefix, "any")
 	case *ast.StarExpr:
-		return append([]string{"nullable"}, gatherFieldType(typeName, f, t.X, fieldTag, sec, pp)...)
+		tw := gatherFieldType(typeName, f, t.X, fieldTag, sec, pp)
+		if tw[0] != "nullable" {
+			tw = append([]string{"nullable"}, tw...)
+		}
+		return tw
 	case *ast.SelectorExpr:
-		return []string{parseSelector(t, typeName, sec, pp)}
+		return append(nullablePrefix, parseSelector(t, typeName, sec, pp))
 	}
 	logFatalLinef(pp, e.Pos(), "unimplemented ast.Expr %#v for struct %q field %q in gatherFieldType", e, typeName, f.Name)
 	return nil
