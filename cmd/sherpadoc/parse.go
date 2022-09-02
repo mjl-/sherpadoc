@@ -389,7 +389,7 @@ func gatherFieldType(typeName string, f *field, e ast.Expr, fieldTag *ast.BasicL
 		switch name {
 		case "byte":
 			name = "uint8"
-		case "bool", "int8", "uint8", "int16", "uint16", "int32", "uint32", "float32", "float64", "string":
+		case "bool", "int8", "uint8", "int16", "uint16", "int32", "uint32", "float32", "float64", "string", "any":
 		case "int64", "uint64":
 			if commaString {
 				name += "s"
@@ -446,7 +446,7 @@ func parseArgType(e ast.Expr, sec *section, pp *parsedPackage) typewords {
 		switch name {
 		case "byte":
 			name = "uint8"
-		case "bool", "int8", "uint8", "int16", "uint16", "int32", "uint32", "int64", "uint64", "float32", "float64", "string":
+		case "bool", "int8", "uint8", "int16", "uint16", "int32", "uint32", "int64", "uint64", "float32", "float64", "string", "any":
 		case "int", "uint":
 			name += "32"
 		case "error":
