@@ -246,6 +246,22 @@ func ensureNamedType(t *doc.Type, sec *section, pp *parsedPackage) {
 				gatherFields(f.Type, typeName, xpp)
 				continue
 			}
+
+			// Check if we need this type. Otherwise we may trip
+			// over an unhandled type that we wouldn't include in
+			// the output (eg due to a struct tag).
+			names := nameList(f.Names, f.Tag)
+			need := false
+			for _, name := range names {
+				if name != "" {
+					need = true
+					break
+				}
+			}
+			if !need {
+				continue
+			}
+
 			ff := &field{
 				"",
 				nil,
