@@ -7,8 +7,10 @@ import (
 	"go/parser"
 	"go/token"
 	"log"
+	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -663,32 +665,71 @@ func (pp *parsedPackage) ensurePackageParsed(importPath string) *parsedPackage {
 		return r
 	}
 
-	config := &packages.Config{
-		Mode: packages.NeedName | packages.NeedFiles,
-	}
-	pkgs, err := packages.Load(config, importPath)
-	check(err, "loading package")
-	if len(pkgs) != 1 {
-		log.Fatalf("loading package %q: got %d packages, expected 1", importPath, len(pkgs))
-	}
-	pkg := pkgs[0]
-	if len(pkg.GoFiles) == 0 {
-		log.Fatalf("loading package %q: no go files found", importPath)
+	var localPath string
+	var astPkg *ast.Package
+	var fset *token.FileSet
+
+	// If dependencies are vendored, we load packages from vendor/. This is typically
+	// faster than using package.Load (the fallback), which may spawn commands.
+	// For me, while testing, for loading a simple package from the same module goes
+	// from 50-100 ms to 1-5ms. Loading "net" from 200ms to 65ms.
+
+	if gomodFile != nil {
+		if importPath == gomodFile.Module.Mod.Path {
+			localPath = gomodDir
+		} else if strings.HasPrefix(importPath, gomodFile.Module.Mod.Path+"/") {
+			localPath = filepath.Join(gomodDir, strings.TrimPrefix(importPath, gomodFile.Module.Mod.Path+"/"))
+		} else {
+			p := filepath.Join(gomodDir, "vendor", importPath)
+			if _, err := os.Stat(p); err == nil {
+				localPath = p
+			} else {
+				localPath = filepath.Join(runtime.GOROOT(), "src", importPath)
+			}
+		}
+
+		fset = token.NewFileSet()
+		astPkgs, err := parser.ParseDir(fset, localPath, nil, parser.ParseComments|parser.DeclarationErrors)
+		check(err, "parsing go files from "+localPath)
+		for name, pkg := range astPkgs {
+			if strings.HasSuffix(name, "_test") {
+				continue
+			}
+			if astPkg != nil {
+				log.Fatalf("loading package %q: multiple packages found", importPath)
+			}
+			astPkg = pkg
+		}
+	} else {
+		config := &packages.Config{
+			Mode: packages.NeedName | packages.NeedFiles,
+		}
+		pkgs, err := packages.Load(config, importPath)
+		check(err, "loading package")
+		if len(pkgs) != 1 {
+			log.Fatalf("loading package %q: got %d packages, expected 1", importPath, len(pkgs))
+		}
+		pkg := pkgs[0]
+		if len(pkg.GoFiles) == 0 {
+			log.Fatalf("loading package %q: no go files found", importPath)
+		}
+
+		fset = token.NewFileSet()
+		localPath = filepath.Dir(pkg.GoFiles[0])
+		astPkgs, err := parser.ParseDir(fset, localPath, nil, parser.ParseComments)
+		check(err, "parsing go files from directory")
+		var ok bool
+		astPkg, ok = astPkgs[pkg.Name]
+		if !ok {
+			log.Fatalf("loading package %q: could not find astPkg for %q", importPath, pkg.Name)
+		}
 	}
 
-	fset := token.NewFileSet()
-	localPath := filepath.Dir(pkg.GoFiles[0])
-	astPkgs, err := parser.ParseDir(fset, localPath, nil, parser.ParseComments)
-	check(err, "parsing go files from directory")
-	astPkg, ok := astPkgs[pkg.Name]
-	if !ok {
-		log.Fatalf("loading package %q: could not find astPkg for %q", importPath, pkg.Name)
-	}
-	docpkg := doc.New(astPkg, "", doc.AllDecls)
+	docpkg := doc.New(astPkg, "", doc.AllDecls|doc.PreserveAST)
 
 	npp := &parsedPackage{
 		Fset:    fset,
-		Path:    pkg.ID,
+		Path:    localPath,
 		Pkg:     astPkg,
 		Docpkg:  docpkg,
 		Imports: make(map[string]*parsedPackage),

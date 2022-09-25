@@ -45,9 +45,12 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/mjl-/sherpadoc"
+
+	"golang.org/x/mod/modfile"
 )
 
 var (
@@ -55,6 +58,14 @@ var (
 	replace             = flag.String("replace", "", "comma-separated list of type replacements, e.g. \"somepkg.SomeType string\"")
 	title               = flag.String("title", "", "title of the API, default is the name of the type of the main API")
 	adjustFunctionNames = flag.String("adjust-function-names", "", `by default, the first character of function names is turned into lower case; with "lowerWord" the first string of upper case characters is lower cased, with "none" the name is left as is`)
+)
+
+// If there is a "vendor" directory, we'll load packages from there (instead of
+// through (slower) packages.Load), and we need to know the module name to resolve
+// imports to paths in vendor.
+var (
+	gomodFile *modfile.File
+	gomodDir  string
 )
 
 type field struct {
@@ -141,6 +152,30 @@ func main() {
 	args := flag.Args()
 	if len(args) != 1 {
 		usage()
+	}
+
+	// If vendor exists, we load packages from it.
+	for dir, _ := os.Getwd(); dir != "" && dir != "/"; dir = filepath.Dir(dir) {
+		p := filepath.Join(dir, "go.mod")
+		if _, err := os.Stat(p); err != nil && os.IsNotExist(err) {
+			continue
+		} else if err != nil {
+			log.Printf("searching for go.mod: %v", err)
+			break
+		}
+
+		if _, err := os.Stat(filepath.Join(dir, "vendor")); err != nil {
+			break
+		}
+
+		if gomod, err := os.ReadFile(p); err != nil {
+			log.Fatalf("reading go.mod: %s", err)
+		} else if mf, err := modfile.ParseLax("go.mod", gomod, nil); err != nil {
+			log.Fatalf("parsing go.mod: %s", err)
+		} else {
+			gomodFile = mf
+			gomodDir = dir
+		}
 	}
 
 	section := parseDoc(args[0], *packagePath)
