@@ -285,6 +285,13 @@ func ensureNamedType(t *doc.Type, sec *section, pp *parsedPackage) {
 		tt.Kind = typeStruct
 		gatherStructFields(nt, t.Name, pp)
 
+	case *ast.ArrayType:
+		if ident, ok := nt.Elt.(*ast.Ident); ok && ident.Name == "byte" {
+			tt.Kind = typeBytes
+		} else {
+			logFatalLinef(pp, t.Decl.TokPos, "named type with unsupported element type %T", ts.Type)
+		}
+
 	case *ast.Ident:
 		if strings.HasSuffix(typePath, "sherpa.Int64s") || strings.HasSuffix(typePath, "sherpa.Uint64s") {
 			return

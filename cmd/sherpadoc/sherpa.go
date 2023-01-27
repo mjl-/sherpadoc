@@ -48,6 +48,14 @@ func sherpaSection(sec *section) *sherpadoc.Section {
 				Values: t.StringValues,
 			}
 			doc.Strings = append(doc.Strings, e)
+		case typeBytes:
+			// todo: hack. find proper way to docment them. better for larger functionality: add generic support for lists of types. for now we'll fake this being a string...
+			e := sherpadoc.Strings{
+				Name:   t.Name,
+				Docs:   strings.TrimSpace(t.Text),
+				Values: []struct{Name string; Value string; Docs string}{},
+			}
+			doc.Strings = append(doc.Strings, e)
 		default:
 			panic("missing case")
 		}

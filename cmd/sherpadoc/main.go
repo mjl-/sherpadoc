@@ -92,6 +92,7 @@ const (
 	typeStruct typeKind = iota
 	typeInts
 	typeStrings
+	typeBytes
 )
 
 // NamedType represents the type of a parameter or return value.
