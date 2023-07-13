@@ -299,7 +299,7 @@ func ensureNamedType(t *doc.Type, sec *section, pp *parsedPackage) {
 
 		tt.Text = t.Doc + ts.Comment.Text()
 		switch nt.Name {
-		case "byte", "int16", "uint16", "int32", "uint32", "int", "uint":
+		case "byte", "int8", "uint8", "int16", "uint16", "int32", "uint32", "int", "uint":
 			tt.Kind = typeInts
 		case "string":
 			tt.Kind = typeStrings
