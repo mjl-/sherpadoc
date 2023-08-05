@@ -162,7 +162,7 @@ func parseSection(t *doc.Type, pp *parsedPackage) *section {
 	st := expr.(*ast.StructType)
 	for _, f := range st.Fields.List {
 		ident, ok := f.Type.(*ast.Ident)
-		if !ok {
+		if !ok || !ast.IsExported(ident.Name) {
 			continue
 		}
 		name := ident.Name
