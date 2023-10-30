@@ -746,8 +746,8 @@ func (pp *parsedPackage) ensurePackageParsed(importPath string) *parsedPackage {
 	return npp
 }
 
-// LookupPackageImportPath returns the import/package path for pkgName as used as
-// used in the type named typeName.
+// LookupPackageImportPath returns the import/package path for pkgName as used
+// in the type named typeName.
 func (pp *parsedPackage) lookupPackageImportPath(typeName, pkgName string) string {
 	file := pp.lookupTypeFile(typeName)
 	for _, imp := range file.Imports {
@@ -758,7 +758,8 @@ func (pp *parsedPackage) lookupPackageImportPath(typeName, pkgName string) strin
 	return ""
 }
 
-// LookupTypeFile returns the go source file that containst he definition of the type named typeName.
+// LookupTypeFile returns the go source file that contains the definition of
+// the type named typeName.
 func (pp *parsedPackage) lookupTypeFile(typeName string) *ast.File {
 	for _, file := range pp.Pkg.Files {
 		for _, decl := range file.Decls {
