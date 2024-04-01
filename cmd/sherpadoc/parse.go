@@ -538,6 +538,8 @@ func parseSelector(t *ast.SelectorExpr, srcTypeName string, sec *section, pp *pa
 
 	if pkgName == "time" && typeName == "Time" {
 		return "timestamp"
+	} else if pkgName == "time" && typeName == "Duration" {
+		return "int64"
 	}
 	if pkgName == "sherpa" {
 		switch typeName {
