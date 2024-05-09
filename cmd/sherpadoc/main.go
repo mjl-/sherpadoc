@@ -179,11 +179,13 @@ func main() {
 				log.Printf("duplicate rename %q", elem)
 				usage()
 			}
-			if to[l[2]] {
-				log.Printf("duplicate rename type %q", l[2])
-				usage()
+			if !sherpadoc.IsBasicType(l[2]) {
+				if to[l[2]] {
+					log.Printf("duplicate rename type %q", l[2])
+					usage()
+				}
+				to[l[2]] = true
 			}
-			to[l[2]] = true
 			renames[src] = l[2]
 		}
 	}
