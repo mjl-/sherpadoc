@@ -711,7 +711,7 @@ func (pp *parsedPackage) ensurePackageParsed(importPath string) *parsedPackage {
 		astPkgs, err := parser.ParseDir(fset, localPath, nil, parser.ParseComments|parser.DeclarationErrors)
 		check(err, "parsing go files from "+localPath)
 		for name, pkg := range astPkgs {
-			if strings.HasSuffix(name, "_test") {
+			if name == "main" || strings.HasSuffix(name, "_test") {
 				continue
 			}
 			if astPkg != nil {
